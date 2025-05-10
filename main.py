@@ -1,8 +1,13 @@
 import pygame
+import pygame.midi
 import math
 import pretty_midi
 
 pygame.init()
+pygame.midi.init()
+
+# Ouvre la sortie MIDI par défaut
+midi_out = pygame.midi.Output(pygame.midi.get_default_output_id())
 
 screen = pygame.display.set_mode((540, 960))
 clock = pygame.time.Clock()
@@ -20,51 +25,56 @@ all_notes.sort(key=lambda n: n.start)
 note_index = 0
 
 ball_radius = 40
-ring_radius = 200 - 5  # 200 rayon - 5 (moitié de l'épaisseur du trait 10)
+ring_radius = 200 - 5
+
+note_duration = 300  # durée en millisecondes (0.3s)
+active_notes = []
 
 while True:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
+            midi_out.close()
             pygame.quit()
             exit()
 
     screen.fill((0, 0, 0))
 
-    # Cercle extérieur
     pygame.draw.circle(screen, (255, 255, 255), center, 200, 10)
 
-    # Mise à jour position
     ball_velocity[1] += gravity
     ball_position[0] += ball_velocity[0]
     ball_position[1] += ball_velocity[1]
 
-    # Distance entre centre du cercle et balle
     dx = ball_position[0] - center[0]
     dy = ball_position[1] - center[1]
     distance = math.sqrt(dx**2 + dy**2)
 
-    # Collision ?
     if distance + ball_radius >= ring_radius:
-        # Normalisation du vecteur (dx, dy)
         nx = dx / distance
         ny = dy / distance
 
-        # Corrige la position
         ball_position[0] = center[0] + nx * (ring_radius - ball_radius)
         ball_position[1] = center[1] + ny * (ring_radius - ball_radius)
 
-        # Inverse la vitesse
         dot = ball_velocity[0]*nx + ball_velocity[1]*ny
         ball_velocity[0] -= 2 * dot * nx
         ball_velocity[1] -= 2 * dot * ny
 
-        # Affiche une note MIDI
+        # Joue une note MIDI
         if note_index < len(all_notes):
             note = all_notes[note_index]
-            print(f"Rebond {note_index+1}: pitch={note.pitch}, velocity={note.velocity}, start={note.start}")
+            pitch = note.pitch
+            velocity = note.velocity
+            midi_out.note_on(pitch, velocity)
+            active_notes.append((pygame.time.get_ticks(), pitch))
+            print(f"Rebond {note_index+1}: pitch={pitch}, velocity={velocity}")
             note_index += 1
 
-    # Dessin balle
+    # Arrête les notes trop anciennes
+    current_time = pygame.time.get_ticks()
+    active_notes = [(t, p) for (t, p) in active_notes if not (
+        current_time - t >= note_duration and not midi_out.note_off(p, 0))]
+
     pygame.draw.circle(screen, (255, 255, 255), ball_position, 44)
     pygame.draw.circle(screen, (255, 0, 0), ball_position, ball_radius)
 
